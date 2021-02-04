@@ -1,5 +1,6 @@
 /*
-** ECE361
+** ECE361 - Computer Networks - Lab 1 - Server File - server.c
+** Group 21 - Abdurrafay Khan & Shadman Kaif
 */
 
 #include <stdio.h>
@@ -13,83 +14,80 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 
-#define MYPORT "4950"	// the port users will be connecting to
-
-#define MAXBUFLEN 100
-
-// get sockaddr, IPv4 or IPv6:
-void *get_in_addr(struct sockaddr *sa)
+int main(int argc, char *argv[])
 {
-	if (sa->sa_family == AF_INET) {
-		return &(((struct sockaddr_in*)sa)->sin_addr);
+	// checks for 2 arguments being passed in <server> <port #>
+	if (argc != 2) {
+		fprintf(stderr, "usage: server <server port number>\n");
+		return 0;
 	}
+	
+	// stores arguments passed in to variables
+	char* server_string = argv[0];
+	char* port_num = argv[1];
 
-	return &(((struct sockaddr_in6*)sa)->sin6_addr);
-}
-
-int main(void)
-{
-	int sockfd;
-	struct addrinfo hints, *servinfo, *p;
-	int rv;
-	int numbytes;
-	struct sockaddr_storage their_addr;
-	char buf[MAXBUFLEN];
-	socklen_t addr_len;
-	char s[INET6_ADDRSTRLEN];
-
+	// initializes structs to be used in opening socket
+	struct addrinfo hints; 
+	struct addrinfo *res; 
+	
+	// resets hints and updates with desires parameters (IPv4 or IPv6, datagram, udp connection) and autofilled IP
 	memset(&hints, 0, sizeof hints);
-	hints.ai_family = AF_INET6; // set to AF_INET to use IPv4
+	hints.ai_family = AF_UNSPEC;
 	hints.ai_socktype = SOCK_DGRAM;
-	hints.ai_flags = AI_PASSIVE; // use my IP
-
-	if ((rv = getaddrinfo(NULL, MYPORT, &hints, &servinfo)) != 0) {
-		fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(rv));
-		return 1;
+	hints.ai_protocol = IPPROTO_UDP;
+	hints.ai_flags = AI_PASSIVE;     
+	
+	// obtains address info
+	int info = getaddrinfo(NULL, port_num, &hints, &res);	
+	
+	// makes a UDP socket
+	int sockfd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	if (sockfd == -1) {
+		printf("Error in making socket\n");
+		return 0;
 	}
-
-	// loop through all the results and bind to the first we can
-	for(p = servinfo; p != NULL; p = p->ai_next) {
-		if ((sockfd = socket(p->ai_family, p->ai_socktype,
-				p->ai_protocol)) == -1) {
-			perror("listener: socket");
-			continue;
+	
+	// binds the socket with the respective IP address and port #
+	int bind_info = bind(sockfd, res->ai_addr, res->ai_addrlen);
+	if (bind_info == -1) {
+		printf("Error in binding\n");
+		return 0;
+	}
+	
+	// address info for the connection being made in order to receieve "ftp"
+	struct sockaddr_in connecting_address;
+	socklen_t addr_len = sizeof connecting_address;
+	char received_message[75];
+	
+	// receives message from connection and error checks
+	int rec_bytes = recvfrom(sockfd, received_message, 74 , 0, (struct sockaddr *)&connecting_address, &addr_len);
+	if (rec_bytes == -1) {
+		printf("Error in receiving\n");
+		return 0;
+	}
+	
+	// verifies "ftp" has been receieved from the client
+    if(strcmp(received_message, "ftp") == 0){
+		
+		// sends back a "yes" message to client and checks if it sent
+		int sent_bytes = sendto(sockfd, "yes", 75, 0, (struct sockaddr *)&connecting_address, addr_len);
+		if (sent_bytes == -1) {
+			printf("Error in sending back the 'yes' message\n");
+			return 0;
 		}
-
-		if (bind(sockfd, p->ai_addr, p->ai_addrlen) == -1) {
-			close(sockfd);
-			perror("listener: bind");
-			continue;
+    }
+	else {
+		
+		// if "yes" wasn't receieved, sends back a "no" message to client and checks if it sent
+		int sent_bytes = sendto(sockfd, "no", 75, 0, (struct sockaddr *)&connecting_address, addr_len);
+		if (sent_bytes == -1) {
+			printf("Error in sending back the 'no' messsage\n");
+			return 0;
 		}
-
-		break;
 	}
-
-	if (p == NULL) {
-		fprintf(stderr, "listener: failed to bind socket\n");
-		return 2;
-	}
-
-	freeaddrinfo(servinfo);
-
-	printf("listener: waiting to recvfrom...\n");
-
-	addr_len = sizeof their_addr;
-	if ((numbytes = recvfrom(sockfd, buf, MAXBUFLEN-1 , 0,
-		(struct sockaddr *)&their_addr, &addr_len)) == -1) {
-		perror("recvfrom");
-		exit(1);
-	}
-
-	printf("listener: got packet from %s\n",
-		inet_ntop(their_addr.ss_family,
-			get_in_addr((struct sockaddr *)&their_addr),
-			s, sizeof s));
-	printf("listener: packet is %d bytes long\n", numbytes);
-	buf[numbytes] = '\0';
-	printf("listener: packet contains \"%s\"\n", buf);
-
-	close(sockfd);
-
-	return 0;
+	
+	// closes connection
+    close(sockfd);
+	
+    return 0;
 }
