@@ -97,7 +97,7 @@ int main(int argc, char *argv[])
 		return 0;
 	}
 	
-	// fees memory and closes connection
+	// frees memory and closes connection
     freeaddrinfo(res);
     close(sockfd);
 	
