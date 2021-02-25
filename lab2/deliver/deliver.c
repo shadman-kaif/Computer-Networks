@@ -15,7 +15,7 @@
 #include <netdb.h>
 #include <time.h>
 
-// Struct for each individual packet to be sent
+// struct for each individual packet to be sent
 struct packet {
 	unsigned int total_frag;
 	unsigned int frag_no;	
@@ -84,10 +84,9 @@ int main(int argc, char *argv[])
 		return 0;
 	}
 	
-	// Initialize the start time before sending the file and records time before sending
+	// initialize the start time before sending the file and records time before sending
 	clock_t start_time, end_time;
 	start_time = clock();
-	
 	
 	// sends a "ftp" message to server and checks if it sent
 	int sent_bytes = sendto(sockfd, "ftp", 3, 0, res->ai_addr, res->ai_addrlen);
@@ -101,30 +100,27 @@ int main(int argc, char *argv[])
 	socklen_t addr_len = sizeof connecting_address;
 	char received_message[1000];
 	
-	// receives message from server and error checks
-	int rec_bytes = recvfrom(sockfd, received_message, 74 , 0, (struct sockaddr *)&connecting_address, &addr_len);
+	// receives message from server 
+	int rec_bytes = recvfrom(sockfd, received_message, 75 , 0, (struct sockaddr *)&connecting_address, &addr_len);
 	
-	// Records time when receiving confirmation from server
+	// records time when receiving confirmation from server
 	end_time = clock();
 	
-	// Initializes and stores the amount of time the total transfer took
+	// initializes and stores the amount of time the total transfer took
 	float total_time;
 	total_time = (float)(end_time - start_time)/CLOCKS_PER_SEC;
 	printf("Round trip time for connection: %f \n", total_time);
 	
+	// error checks the message receieved from server and verifies "yes" has been receieved from the server
 	if (rec_bytes == -1) {
 		printf("Error in receiving message from server\n");
 	}
-	
-	// verifies "yes" has been receieved from the server
-    if(strcmp(received_message, "yes") != 0){
+    if(strcmp(received_message, "yes") == 0){
         printf("A file transfer can start.\n");
     }
 	else {
 		printf("Did not receieve 'yes' from server\n");
 	}
-	
-	
 	
 	
 	//*************************************************************************************
@@ -135,28 +131,27 @@ int main(int argc, char *argv[])
 	// reads the file in binary mode using the filename passed in
 	FILE* file = fopen(filename, "rb");
 	
-	// Goes to the end of the file to calculate size of file
+	// goes to the end of the file to calculate size of file
 	fseek(file, 0, SEEK_END);
 	int f_size = ftell(file);
 	
-	// Goes back to beginning of file to begin breaking up into packets
+	// goes back to beginning of file to begin breaking up into packets
 	fseek(file, 0, SEEK_SET);
 	
-	// Using 1000 as max packet size, find out how many packets are needed for the file, and create data structure for it
+	// using 1000 as max packet size, find out how many packets are needed for the file, and create data structure for it
 	int num_of_fragments = (f_size/1000) + 1;
 	char data_for_packet[1000];
 
-	// Creates pointer to store previous packet, store head packet, all to connect linked_list of packets
+	// creates pointer to store previous packet, store head packet, all to connect linked_list of packets
 	struct packet *prev_packet, *head_packet, *curr_packet;
 	
-
-	// Creates linked list adding packets with every iteration
+	// creates linked list adding packets with every iteration
 	for (int i = 1; i <= num_of_fragments; i++) {
 		
-		// Creates a new packet
+		// creates a new packet with respective memory allocation
 		struct packet *new_packet = malloc(sizeof(struct packet));
 		
-		// If this is the first packet, set the first packet as head, otherwise connect previous packet to this new one
+		// sets first packet to head, otherwise connect previous packet to this new one
 		if (i == 1) {
 			head_packet = new_packet;
 		}
@@ -164,7 +159,7 @@ int main(int argc, char *argv[])
 			prev_packet->next = new_packet;
 		}
 		
-		// Stores values for this given packet
+		// stores values for this given packet, reads the first 1000 bytes from file as the data
 		new_packet->total_frag = num_of_fragments;
 		new_packet->frag_no = i;
 		int n = fread(data_for_packet, 1, 1000, file);
@@ -177,42 +172,33 @@ int main(int argc, char *argv[])
 		prev_packet = new_packet;
 	}
 	
-	// Close file that was being
+	// close file that was being broken into packets
 	fclose(file);
 	
-	
-	
-	// Go through every packet in linked list
-	// For every packet
-	//      Convert into string
-	//      Send to server
-	//      Receive ACK
-	//      Proceed to next packet
-	
-	
-	
-	// total_frag : frag_no : size : filename : filedata
+	// start at head of the linked list to send to server, initialize a string to read ACK messages from server
 	curr_packet = head_packet;
 	char received_message2[1000];
 	
+	// goes through linked list of all packets in order to send each, and receieve corresponding ACK messages
 	while (curr_packet != NULL) {
 		
-		
-		// Calculates size of each individual member of the packet to find total length of packet
+		// calculates size of each individual member of the packet to find total length of packet
 		int s1 = snprintf(NULL, 0, "%d", curr_packet->total_frag);
 		int s2 = snprintf(NULL, 0, "%d", curr_packet->frag_no);
 		int s3 = snprintf(NULL, 0, "%d", curr_packet->size);
 		int s4 = strlen(curr_packet->filename);
 		int s5 = curr_packet->size;
 		
-		// Account for the four ":" when calculating total size for packet
+		// account for the four ":"'s when calculating total size for packet
 		int packet_string_size = s1 + s2 + s3 + s4 + s5 + 4;
 		
-		// Creates memory for the string packet that needs to be sent
+		// creates memory for the string packet that needs to be sent
 		char* packet_to_send = malloc(packet_string_size*sizeof(char));
 		
+		// fills out the string to be sent with the first four members, returning index at the end of four members
 		int four_members = sprintf(packet_to_send, "%d:%d:%d:%s:", curr_packet->total_frag, curr_packet->frag_no, curr_packet->size, curr_packet->filename);
 		
+		// copies the data into the string starting from the index calculated above
 		memcpy(&packet_to_send[four_members], curr_packet->filedata, curr_packet->size);
 		
 		// sends packet to server
@@ -222,29 +208,12 @@ int main(int argc, char *argv[])
 			return 0;
 		}
 		
-		
-		// receives message from server and error checks
+		// receives "ACK" message from server and error checks
 		rec_bytes = recvfrom(sockfd, received_message, 999 , 0, (struct sockaddr *)&connecting_address, &addr_len);
-
-		received_message[rec_bytes] = '\0';
-		
-/*
-		received_message[rec_bytes] = '\0';
-
-		if (strcmp(received_message, "ACK") != 0)
-			continue;
-			
-		curr_packet = curr_packet->next;
-		free(packet_to_send);
-		
-	
-		*/
-	
 		if (rec_bytes == -1) {
 			printf("Error in receiving ACK message from server\n");
 			return 0;
 		}
-		
 		if(strcmp(received_message, "ACK") == 0){
 			printf("ACK receieved.\n");
 		}
@@ -252,13 +221,12 @@ int main(int argc, char *argv[])
 			printf("No ACK received\n");
 		}
 		
+		// moves onto sending next packet, and frees the string for the next iteration
 		curr_packet = curr_packet->next;
 		free(packet_to_send);
-		
 	}
 
-	
-	// fees memory and closes connection
+	// frees memory and closes connection
     freeaddrinfo(res);
     close(sockfd);
 	

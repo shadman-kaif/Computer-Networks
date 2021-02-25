@@ -27,6 +27,11 @@ struct packet {
 
 int main(int argc, char *argv[])
 {
+	
+	//*************************************************************************************
+	//                                     PART 1
+	//*************************************************************************************
+	
 	// checks for 2 arguments being passed in <server> <port #>
 	if (argc != 2) {
 		fprintf(stderr, "usage: server <server port number>\n");
@@ -68,17 +73,18 @@ int main(int argc, char *argv[])
 	// address info for the connection being made in order to receieve "ftp"
 	struct sockaddr_in connecting_address;
 	socklen_t addr_len = sizeof connecting_address;
-	char received_message[75];
+	char ftp_receive[4];
 	
 	// receives message from connection and error checks
-	int rec_bytes = recvfrom(sockfd, received_message, 74 , 0, (struct sockaddr *)&connecting_address, &addr_len);
+	int rec_bytes = recvfrom(sockfd, ftp_receive, 4, 0, (struct sockaddr *)&connecting_address, &addr_len);
 	if (rec_bytes == -1) {
 		printf("Error in receiving\n");
 		return 0;
 	}
 	
 	// verifies "ftp" has been receieved from the client
-    if(strcmp(received_message, "ftp") == 0){
+    if(strcmp(ftp_receive, "ftp") == 0){
+		
 		// sends back a "yes" message to client and checks if it sent
 		int sent_bytes = sendto(sockfd, "yes", 75, 0, (struct sockaddr *)&connecting_address, addr_len);
 		if (sent_bytes == -1) {
@@ -87,7 +93,7 @@ int main(int argc, char *argv[])
 		}
     }
 	else {
-		
+
 		// if "yes" wasn't receieved, sends back a "no" message to client and checks if it sent
 		int sent_bytes = sendto(sockfd, "no", 75, 0, (struct sockaddr *)&connecting_address, addr_len);
 		if (sent_bytes == -1) {
@@ -96,74 +102,75 @@ int main(int argc, char *argv[])
 		}
 	}
 
+
+	//*************************************************************************************
+	//                                     PART 2
+	//*************************************************************************************
+	
+	// initializes file structure and necessary variables to detect all packets and write to file
 	FILE * file;
-	char data[1100] = {0};
+	char data[1100];
 	bool flag = true;
 	
+	// repeats continuously until all packets have been receieved
 	while (flag) {
-		int received_bytes_temp = recvfrom(sockfd, data, 1100, 0, (struct sockaddr *)&connecting_address, &addr_len);
 		
+		// detects the incoming packet from the client and error checks
+		int received_bytes_temp = recvfrom(sockfd, data, 1100, 0, (struct sockaddr *)&connecting_address, &addr_len);
 		if (received_bytes_temp == -1) {
 			printf("Error in receiving the packet message\n");
 			return 0;
 		}
 
+		// sends back an "ACK" message to acknowledge packet has been receieved, and error checks
 		int sending_ack = sendto(sockfd, "ACK", 75, 0, (struct sockaddr *)&connecting_address, addr_len);
 		if (sending_ack == -1) {
 			printf("Error in sending the 'ACK' message\n");
 			return 0;
 		}
 		
-		// Conversion from string back to struct
+		// conversion of the received packet string into the packet struct using strtok and ":" as a delimiter
 		char * total_frags = strtok(data, ":"); 
 		char * frag_nos = strtok(NULL, ":");
 		char * sizes = strtok(NULL, ":");
 		char * file_name = strtok(NULL, ":");
 		
+		// converts the string values detected into their corresponding integer values
 		int total_frag_final = atoi(total_frags), frag_num_final = atoi(frag_nos), size_final = atoi(sizes);
 		
+		// calculates at what index the data string starts at and copies the data string into its respective variable
 		int index_before_fd = 4 + strlen(total_frags) + strlen(frag_nos) + strlen(sizes) + strlen(file_name);
-		
-		char * temp = malloc(size_final * sizeof(char));
-		
-		memcpy(temp, &data[index_before_fd], size_final);
-		
+		char * data_string = malloc(size_final * sizeof(char));
+		memcpy(data_string, &data[index_before_fd], size_final);
+	
+		// creates a packet and fills it with its corresponding members
 		struct packet * curr_packet = malloc(sizeof(struct packet));
 		curr_packet->total_frag = total_frag_final;
 		curr_packet->frag_no = frag_num_final;
 		curr_packet->size = size_final;
 		curr_packet->filename = file_name;
+		memcpy(curr_packet->filedata, data_string, size_final);
+		char* data_to_write = curr_packet->filedata;
 		
-		memcpy(curr_packet->filedata, temp, size_final);
-		
-		//if (size_final < 1000) {
-			//curr_packet->filedata[size_final] = "\0";
-		//}
-		
-		// Check if frag no. == total frag no. --> break inf loop
+		// if the last packet has been receieved, exit the loop
 		if (frag_num_final == total_frag_final) {
 			flag = false;
 		}
 		
+		// if this is the first packet, then open a file so that the incoming data can be written into it
 		if (frag_num_final == 1) {
 			file = fopen(file_name, "wb");
 		}
+
+		// writes data to file
+		fwrite(data_to_write, 1, size_final, file);
 		
-		char* tempdata = curr_packet->filedata;
-		
-		// Write to file after opening file
-		fwrite(tempdata, 1, size_final, file);
-		
-		
+		// frees the packet struct before moving onto the next one
 		free(curr_packet);
-		
 	}
 	
-	
+	// closes file, connection
 	fclose(file);
-	
-	
-	// closes connection
     close(sockfd);
 	
     return 0;
