@@ -15,8 +15,6 @@
 #include <netdb.h>
 #include <time.h>
 
-
-
 // Struct for each individual packet to be sent
 struct packet {
 	unsigned int total_frag;
@@ -24,10 +22,8 @@ struct packet {
 	unsigned int size;
 	char* filename;
 	char filedata[1000];
-	struct packet * next;
+	struct packet* next;
 };
-
-
 
 int main(int argc, char *argv[])
 {
@@ -121,19 +117,68 @@ int main(int argc, char *argv[])
 	}
 	
 	// verifies "yes" has been receieved from the server
-    if(strcmp(received_message, "yes") == 0){
+    if(strcmp(received_message, "yes") != 0){
         printf("A file transfer can start.\n");
     }
 	else {
 		printf("Did not receieve 'yes' from server\n");
 	}
 	
-	received_message[rec_bytes] = '\0';
+	
 	
 	
 	//*************************************************************************************
 	//                                     PART 2
 	//*************************************************************************************
+	
+	
+	// reads the file in binary mode using the filename passed in
+	FILE* file = fopen(filename, "rb");
+	
+	// Goes to the end of the file to calculate size of file
+	fseek(file, 0, SEEK_END);
+	int f_size = ftell(file);
+	
+	// Goes back to beginning of file to begin breaking up into packets
+	fseek(file, 0, SEEK_SET);
+	
+	// Using 1000 as max packet size, find out how many packets are needed for the file, and create data structure for it
+	int num_of_fragments = (f_size/1000) + 1;
+	char data_for_packet[1000];
+
+	// Creates pointer to store previous packet, store head packet, all to connect linked_list of packets
+	struct packet *prev_packet, *head_packet, *curr_packet;
+	
+
+	// Creates linked list adding packets with every iteration
+	for (int i = 1; i <= num_of_fragments; i++) {
+		
+		// Creates a new packet
+		struct packet *new_packet = malloc(sizeof(struct packet));
+		
+		// If this is the first packet, set the first packet as head, otherwise connect previous packet to this new one
+		if (i == 1) {
+			head_packet = new_packet;
+		}
+		else {
+			prev_packet->next = new_packet;
+		}
+		
+		// Stores values for this given packet
+		new_packet->total_frag = num_of_fragments;
+		new_packet->frag_no = i;
+		int n = fread(data_for_packet, 1, 1000, file);
+		new_packet->size = n;
+		new_packet->filename = filename;
+		memcpy(new_packet->filedata, data_for_packet, n);
+		new_packet->next = NULL;
+		
+		// Changes previous packet pointer to new packet
+		prev_packet = new_packet;
+	}
+	
+	// Close file that was being
+	fclose(file);
 	
 	
 	
@@ -144,61 +189,15 @@ int main(int argc, char *argv[])
 	//      Receive ACK
 	//      Proceed to next packet
 	
-	struct packet *linked_list_packet(char *filename_test) {
-		// reads the file in binary mode using the filename passed in
-		FILE *file = fopen(filename_test, "rb");
-		
-		// Goes to the end of the file to calculate size of file
-		fseek(file, 0, SEEK_END);
-		int f_size = ftell(file);
-		
-		// Goes back to beginning of file to begin breaking up into packets
-		fseek(file, 0, SEEK_SET);
-		
-		// Using 1000 as max packet size, find out how many packets are needed for the file, and create data structure for it
-		int num_of_fragments = (f_size/1000) + 1;
-		char data_for_packet[1000];
-
-		// Creates pointer to store previous packet, store head packet, all to connect linked_list of packets
-		struct packet * prev_packet, * head_packet, * curr_packet;
-		
-		// Creates linked list adding packets with every iteration
-		for (int i = 1; i <= num_of_fragments; i++) {
-			
-			// Creates a new packet
-			struct packet * new_packet = malloc(sizeof(struct packet));
-			
-			// If this is the first packet, set the first packet as head, otherwise connect previous packet to this new one
-			if (i == 1) {
-				head_packet = new_packet;
-			}
-			else {
-				prev_packet->next = new_packet;
-			}
-			
-			// Stores values for this given packet
-			new_packet->total_frag = num_of_fragments;
-			new_packet->frag_no = i;
-			new_packet->size = fread(data_for_packet, 1, 1000, file);
-			new_packet->filename = filename_test;
-			memcpy(new_packet->filedata, data_for_packet, fread(data_for_packet, 1, 1000, file));
-			new_packet->next = NULL;
-			
-			// Changes previous packet pointer to new packet
-			prev_packet = new_packet;
-		}
-		
-		// Close file that was being
-		fclose(file);
-		return head_packet;
-	}
 	
 	
 	// total_frag : frag_no : size : filename : filedata
-	struct packet *curr_packet = linked_list_packet(filename);
+	curr_packet = head_packet;
+	char received_message2[1000];
 	
-	char *structtostring(struct packet *p, int *length) {
-				
+	while (curr_packet != NULL) {
+		
+		
 		// Calculates size of each individual member of the packet to find total length of packet
 		int s1 = snprintf(NULL, 0, "%d", curr_packet->total_frag);
 		int s2 = snprintf(NULL, 0, "%d", curr_packet->frag_no);
@@ -210,34 +209,25 @@ int main(int argc, char *argv[])
 		int packet_string_size = s1 + s2 + s3 + s4 + s5 + 4;
 		
 		// Creates memory for the string packet that needs to be sent
-		char *packet_to_send = malloc(packet_string_size*sizeof(char));
+		char* packet_to_send = malloc(packet_string_size*sizeof(char));
 		
 		int four_members = sprintf(packet_to_send, "%d:%d:%d:%s:", curr_packet->total_frag, curr_packet->frag_no, curr_packet->size, curr_packet->filename);
 		
 		memcpy(&packet_to_send[four_members], curr_packet->filedata, curr_packet->size);
-		*length = four_members + curr_packet->size;
-		return packet_to_send;
-	}
-
-	int length;
-	
-	while (curr_packet != NULL) {
-		
-		//Converting packet from struct to string format
-        char *packet_to_send = structtostring(curr_packet, &length);
 		
 		// sends packet to server
-		rec_bytes = sendto(sockfd, packet_to_send, length, 0, res->ai_addr, res->ai_addrlen);
-		/*if (sent_packet == -1) {
+		int sent_packet = sendto(sockfd, packet_to_send, packet_string_size, 0, res->ai_addr, res->ai_addrlen);
+		if (sent_packet == -1) {
 			printf("Error in sending packet'\n");
 			return 0;
-		}*/
+		}
 		
 		
 		// receives message from server and error checks
 		rec_bytes = recvfrom(sockfd, received_message, 999 , 0, (struct sockaddr *)&connecting_address, &addr_len);
-		received_message[rec_bytes] = '\0';
 
+		received_message[rec_bytes] = '\0';
+		
 /*
 		received_message[rec_bytes] = '\0';
 
@@ -249,17 +239,17 @@ int main(int argc, char *argv[])
 		
 	
 		*/
-		
-		
-		
-		/*if (rec_bytes == -1) {
+	
+		if (rec_bytes == -1) {
 			printf("Error in receiving ACK message from server\n");
 			return 0;
-		}*/
+		}
 		
-		// verifies "yes" has been receieved from the server
-		if(strcmp(received_message, "ACK") != 0){
-			continue;
+		if(strcmp(received_message, "ACK") == 0){
+			printf("ACK receieved.\n");
+		}
+		else {
+			printf("No ACK received\n");
 		}
 		
 		curr_packet = curr_packet->next;
@@ -274,4 +264,3 @@ int main(int argc, char *argv[])
 	
 	return 0;
 }
-
