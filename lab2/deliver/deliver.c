@@ -177,7 +177,6 @@ int main(int argc, char *argv[])
 	
 	// start at head of the linked list to send to server, initialize a string to read ACK messages from server
 	curr_packet = head_packet;
-	char received_message2[1000];
 	
 	// goes through linked list of all packets in order to send each, and receieve corresponding ACK messages
 	while (curr_packet != NULL) {
