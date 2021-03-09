@@ -4,6 +4,7 @@
 */
 
 #include <stdio.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <errno.h>
@@ -14,6 +15,7 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <time.h>
+#include <math.h>
 
 // struct for each individual packet to be sent
 struct packet {
@@ -85,7 +87,7 @@ int main(int argc, char *argv[])
 	}
 	
 	// initialize the start time before sending the file and records time before sending
-	clock_t start_time, end_time;
+	clock_t start_time, end_time, start_op, end_op;
 	start_time = clock();
 	
 	// sends a "ftp" message to server and checks if it sent
@@ -107,8 +109,9 @@ int main(int argc, char *argv[])
 	end_time = clock();
 	
 	// initializes and stores the amount of time the total transfer took
-	float total_time;
+	float total_time, initial_rtt, total_op;
 	total_time = (float)(end_time - start_time)/CLOCKS_PER_SEC;
+	initial_rtt = total_time;
 	printf("Round trip time for connection: %f \n", total_time);
 	
 	// error checks the message receieved from server and verifies "yes" has been receieved from the server
@@ -124,7 +127,7 @@ int main(int argc, char *argv[])
 	
 	
 	//*************************************************************************************
-	//                                     PART 2
+	//                                     PART 2 / 3
 	//*************************************************************************************
 	
 	
@@ -177,6 +180,13 @@ int main(int argc, char *argv[])
 	
 	// start at head of the linked list to send to server, initialize a string to read ACK messages from server
 	curr_packet = head_packet;
+	char received_message2[1000];
+	int sent_count;
+	
+	
+	float devRTT = total_time;
+	float sampleRTT = total_time;
+	float timeout_value = sampleRTT + 4*devRTT;
 	
 	// goes through linked list of all packets in order to send each, and receieve corresponding ACK messages
 	while (curr_packet != NULL) {
@@ -200,30 +210,111 @@ int main(int argc, char *argv[])
 		// copies the data into the string starting from the index calculated above
 		memcpy(&packet_to_send[four_members], curr_packet->filedata, curr_packet->size);
 		
+
+
+
+		bool sent = false;
+		start_time = clock();
+		if (curr_packet->frag_no == 1) {
+			start_op = start_time;
+		}
+
 		// sends packet to server
 		int sent_packet = sendto(sockfd, packet_to_send, packet_string_size, 0, res->ai_addr, res->ai_addrlen);
 		if (sent_packet == -1) {
 			printf("Error in sending packet'\n");
 			return 0;
 		}
+			
+		sent_count = 1;
+		bool timeout_flag = false;
 		
-		// receives "ACK" message from server and error checks
-		rec_bytes = recvfrom(sockfd, received_message, 999 , 0, (struct sockaddr *)&connecting_address, &addr_len);
-		if (rec_bytes == -1) {
-			printf("Error in receiving ACK message from server\n");
-			return 0;
+		fd_set readfd;
+		FD_ZERO(&readfd);
+		struct timeval timeout;
+		
+		
+		
+		while (!sent) {
+
+			// if it is within the timeout limit set
+			while (1) {
+				
+				printf("Sent Packet #%d, Waiting for ACK #%d \n", curr_packet->frag_no, curr_packet->frag_no);
+				
+				timeout.tv_sec = timeout_value/1;
+				timeout.tv_usec = (timeout_value - timeout.tv_sec)*1000000;
+				
+				FD_SET(sockfd, &readfd);
+				select(sockfd+1, &readfd, NULL, NULL, &timeout);
+				
+				if (!FD_ISSET(sockfd, &readfd)) {
+					printf("Timeout occured at packet #%d\n", curr_packet->frag_no);
+					timeout_value = timeout_value * 1.5;
+					break;
+				}
+				
+				// receives "ACK" message from server and error checks
+				rec_bytes = recvfrom(sockfd, received_message, 999 , 0, (struct sockaddr *)&connecting_address, &addr_len);
+				end_time = clock();
+				if (rec_bytes == -1) {
+					printf("Error in receiving ACK message from server\n");
+					sent = false;
+					break;
+				}
+				
+				// if we receieve ack, move on to next packet
+				if(strcmp(received_message, "ACK") == 0){
+					printf("ACK receieved for packet #%d.\n",curr_packet->frag_no);
+					sent = true;
+					break;
+				}
+				else {
+					break;
+				}
+				
+			}
+				
+				
+			
+			if (sent == false) {
+				
+				// send again 
+				if (sent_count == 15) {
+					end_op = clock();
+					total_op = (float)(end_op - start_op)/CLOCKS_PER_SEC;
+					printf("Attempted to resend packet #%d, 30 times\n Aborting file transfer at a time of %f seconds.\n", curr_packet->frag_no, total_op);
+					sent_count = 0;
+					return 0;
+				}
+				else {
+					printf("Attempted to send packet #%d, %d times.\n Going to attempt to send again.\n", curr_packet->frag_no, sent_count);
+					start_time = clock();
+					int sent_packet = sendto(sockfd, packet_to_send, packet_string_size, 0, res->ai_addr, res->ai_addrlen);
+					if (sent_packet == -1) {
+						printf("Error in sending packet'\n");
+						return 0;
+					}
+					sent_count = sent_count + 1;
+				}
+			}
+			
 		}
-		if(strcmp(received_message, "ACK") == 0){
-			printf("ACK receieved.\n");
-		}
-		else {
-			printf("No ACK received\n");
-		}
+		
+		// updating to new sample time for the next packet
+		sampleRTT = (1 - 0.125) * sampleRTT + (0.125) * (float)(end_time - start_time)/CLOCKS_PER_SEC;
+		devRTT = (0.75) * devRTT + (0.25) * fabs(sampleRTT - (float)(end_time - start_time)/CLOCKS_PER_SEC);
+		timeout_value = sampleRTT + 4 * devRTT;
 		
 		// moves onto sending next packet, and frees the string for the next iteration
 		curr_packet = curr_packet->next;
 		free(packet_to_send);
 	}
+	
+	end_op = clock();
+	total_op = (float)(end_op - start_op)/CLOCKS_PER_SEC;
+	printf("Initial round trip time for connection: %f \n", initial_rtt);
+	printf("Total transfer of %d packets took: %f seconds.\n",num_of_fragments, total_op);
 
 	// frees memory and closes connection
     freeaddrinfo(res);
