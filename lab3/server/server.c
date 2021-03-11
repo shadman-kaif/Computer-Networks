@@ -104,13 +104,14 @@ int main(int argc, char *argv[])
 
 
 	//*************************************************************************************
-	//                                     PART 2
+	//                                     PART 2 / 3
 	//*************************************************************************************
 	
 	// initializes file structure and necessary variables to detect all packets and write to file
 	FILE * file;
 	char data[1100];
 	bool flag = true;
+	int count = 1;
 	
 	// repeats continuously until all packets have been receieved
 	while (flag) {
@@ -119,13 +120,6 @@ int main(int argc, char *argv[])
 		int received_bytes_temp = recvfrom(sockfd, data, 1100, 0, (struct sockaddr *)&connecting_address, &addr_len);
 		if (received_bytes_temp == -1) {
 			printf("Error in receiving the packet message\n");
-			return 0;
-		}
-
-		// sends back an "ACK" message to acknowledge packet has been receieved, and error checks
-		int sending_ack = sendto(sockfd, "ACK", 75, 0, (struct sockaddr *)&connecting_address, addr_len);
-		if (sending_ack == -1) {
-			printf("Error in sending the 'ACK' message\n");
 			return 0;
 		}
 		
@@ -158,12 +152,26 @@ int main(int argc, char *argv[])
 		}
 		
 		// if this is the first packet, then open a file so that the incoming data can be written into it
-		if (frag_num_final == 1) {
+		if (count == 1) {
 			file = fopen(file_name, "wb");
 		}
-
-		// writes data to file
-		fwrite(data_to_write, 1, size_final, file);
+		
+		// only writes to file if the correct packet number is receieved
+		if (count == frag_num_final) {
+			
+			// writes data to file
+			fwrite(data_to_write, 1, size_final, file);
+			
+			// sends back an "ACK" message to acknowledge packet has been receieved, and error checks
+			int sending_ack = sendto(sockfd, "ACK", 75, 0, (struct sockaddr *)&connecting_address, addr_len);
+			if (sending_ack == -1) {
+				printf("Error in sending the 'ACK' message\n");
+				return 0;
+			}
+			
+			// increments counter to only write subsequent packet the next iteration
+			count = count + 1;
+		}
 		
 		// frees the packet struct before moving onto the next one
 		free(curr_packet);

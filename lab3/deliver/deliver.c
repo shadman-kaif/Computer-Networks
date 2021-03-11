@@ -182,8 +182,8 @@ int main(int argc, char *argv[])
 	curr_packet = head_packet;
 	char received_message2[1000];
 	int sent_count;
-	
-	
+
+	// sets up initial timeout value
 	float devRTT = total_time;
 	float sampleRTT = total_time;
 	float timeout_value = sampleRTT + 4*devRTT;
@@ -210,13 +210,9 @@ int main(int argc, char *argv[])
 		// copies the data into the string starting from the index calculated above
 		memcpy(&packet_to_send[four_members], curr_packet->filedata, curr_packet->size);
 		
-
-
-
-		bool sent = false;
 		start_time = clock();
 		if (curr_packet->frag_no == 1) {
-			start_op = start_time;
+			start_op = clock();
 		}
 
 		// sends packet to server
@@ -226,79 +222,72 @@ int main(int argc, char *argv[])
 			return 0;
 		}
 			
+		// sets up counter, flags and variables for the loop to send the packet
 		sent_count = 1;
 		bool timeout_flag = false;
-		
+		bool sent = false;
 		fd_set readfd;
 		FD_ZERO(&readfd);
 		struct timeval timeout;
 		
 		
 		
+		// repeatedly attempt to send the packet until an ACK has been receieved
 		while (!sent) {
+			
+			printf("Packet #%d: ", curr_packet->frag_no);
+			
+			// sets timeout value and reads from the socket for an ACK message
+			timeout.tv_sec = timeout_value/1;
+			timeout.tv_usec = (timeout_value - timeout.tv_sec)*1000000;
+			FD_SET(sockfd, &readfd);
+			select(sockfd+1, &readfd, NULL, NULL, &timeout);
+			
+			// if the timeout limit is reaches, then display it to the user and attempt to send again if the max limit has not been reaches
+			if (!FD_ISSET(sockfd, &readfd)) {
+				
+				// update the user on the timeout and increase the time out value for the subsequent retransmission
+				printf("Timeout occured. ");
+				timeout_value = timeout_value * 2;
 
-			// if it is within the timeout limit set
-			while (1) {
-				
-				printf("Sent Packet #%d, Waiting for ACK #%d \n", curr_packet->frag_no, curr_packet->frag_no);
-				
-				timeout.tv_sec = timeout_value/1;
-				timeout.tv_usec = (timeout_value - timeout.tv_sec)*1000000;
-				
-				FD_SET(sockfd, &readfd);
-				select(sockfd+1, &readfd, NULL, NULL, &timeout);
-				
-				if (!FD_ISSET(sockfd, &readfd)) {
-					printf("Timeout occured at packet #%d\n", curr_packet->frag_no);
-					timeout_value = timeout_value * 1.5;
-					break;
+				// if attempted to retransmit 18 times, abort program, otherwise attempt to send again
+				if (sent_count == 20) {
+					end_op = clock();
+					total_op = (float)(end_op - start_op)/CLOCKS_PER_SEC;
+					printf("\nAttempted to resend packet #%d, 20 times\n Aborting file transfer at a time of %f seconds.\n", curr_packet->frag_no, total_op);
+					sent_count = 0;
+					return 0;
 				}
+				else {
+					
+					// sends packet again to the socket, error  cheks and incrememnts counter for num of times sent
+					int sent_packet_again = sendto(sockfd, packet_to_send, packet_string_size, 0, res->ai_addr, res->ai_addrlen);
+					if (sent_packet_again == -1) {
+						printf("Error in sending packet'\n");
+						return 0;
+					}
+					sent_count = sent_count + 1;
+					printf("Resent packet #%d, %d times.\n", curr_packet->frag_no, sent_count);
+				}
+			}
+			
+			// if time out did not occur, then check what was receieved
+			else {
 				
-				// receives "ACK" message from server and error checks
+				// receieves message from the socket
 				rec_bytes = recvfrom(sockfd, received_message, 999 , 0, (struct sockaddr *)&connecting_address, &addr_len);
 				end_time = clock();
 				if (rec_bytes == -1) {
 					printf("Error in receiving ACK message from server\n");
 					sent = false;
-					break;
 				}
 				
 				// if we receieve ack, move on to next packet
 				if(strcmp(received_message, "ACK") == 0){
 					printf("ACK receieved for packet #%d.\n",curr_packet->frag_no);
 					sent = true;
-					break;
-				}
-				else {
-					break;
-				}
-				
-			}
-				
-				
-			
-			if (sent == false) {
-				
-				// send again 
-				if (sent_count == 15) {
-					end_op = clock();
-					total_op = (float)(end_op - start_op)/CLOCKS_PER_SEC;
-					printf("Attempted to resend packet #%d, 30 times\n Aborting file transfer at a time of %f seconds.\n", curr_packet->frag_no, total_op);
-					sent_count = 0;
-					return 0;
-				}
-				else {
-					printf("Attempted to send packet #%d, %d times.\n Going to attempt to send again.\n", curr_packet->frag_no, sent_count);
-					start_time = clock();
-					int sent_packet = sendto(sockfd, packet_to_send, packet_string_size, 0, res->ai_addr, res->ai_addrlen);
-					if (sent_packet == -1) {
-						printf("Error in sending packet'\n");
-						return 0;
-					}
-					sent_count = sent_count + 1;
 				}
 			}
-			
 		}
 		
 		// updating to new sample time for the next packet
@@ -311,10 +300,11 @@ int main(int argc, char *argv[])
 		free(packet_to_send);
 	}
 	
+	// calculates time for the entire transmission
 	end_op = clock();
 	total_op = (float)(end_op - start_op)/CLOCKS_PER_SEC;
 	printf("Initial round trip time for connection: %f \n", initial_rtt);
-	printf("Total transfer of %d packets took: %f seconds.\n",num_of_fragments, total_op);
+	//printf("Total transfer of %d packets took: %f seconds.\n",num_of_fragments, total_op);
 
 	// frees memory and closes connection
     freeaddrinfo(res);
