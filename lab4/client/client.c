@@ -80,136 +80,71 @@ int main(int argc, char *argv[]) {
 				}
 			}
 			
-			
-			
-			int port_num = atoi(portnum);
-			
-			
-			// sets reference information for which socket type to use
-			struct addrinfo hints; 
-			
-			// pointer to linked list of addrinfo's with addresses that match paramenters set by in hints
-			struct addrinfo *res; 
-			
-			// resets hints and updates with desires parameters (IPv4 or IPv6, datagram, tcp connection)
-			memset(&hints, 0, sizeof hints);
-			hints.ai_family = AF_INET;
-			hints.ai_socktype = SOCK_STREAM;
-			hints.ai_protocol = IPPROTO_TCP;
-			
-			// fils out res with the given possible addresses to connect to
-			int info = getaddrinfo(ip, portnum, &hints, &res);
-			
-			// makes a socket connecting to the first address in res and checks for error
-			int sockfd = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
+			// makes a  TCP socket
+			int sockfd = socket(AF_INET, SOCK_STREAM, 0);
 			if (sockfd == -1) {
 				printf("Error in making socket\n");
 				return 0;
-			}
-	
+			}	
 			
-
+			int port_num = atoi(portnum);
+			struct sockaddr_in *connecting_address;
+			connecting_address = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
+			memset((char *)connecting_address, 0, sizeof(struct sockaddr_in));
+			connecting_address->sin_family = AF_INET;
+			connecting_address->sin_addr.s_addr = inet_addr(ip);
+			connecting_address->sin_port = htons(port_num);
+				
+			
+			
+			int connecting = connect(sockfd, (struct sockaddr *)connecting_address, sizeof(struct sockaddr_in));
+			if (connecting == -1) {
+				printf("Error in making connecting\n");
+				return 0;
+			}	
+			
 			// account for the four ":"'s when calculating total size for packet
-			int packet_string_size = strlen(id) + strlen(pw) + strlen(ip) + strlen(portnum) + 4;
+			int packet_string_size = strlen(id) + strlen(pw) + strlen(ip) + strlen(portnum) + 4 ;
 			
 			// creates memory for the string packet that needs to be sent
-			char* packet_to_send = malloc(packet_string_size*sizeof(char));
+			char* packet_to_send = malloc(1000*sizeof(char));
+		
 			
 			// fills out the string to be sent with the first four members, returning index at the end of four members
-			int four_members = sprintf(packet_to_send, "%s:%s:%s:%s:", id, pw, ip, portnum);
+			
+			int four_members = sprintf(packet_to_send, "%s:%s:%s:%s", id, pw, ip, portnum);
+			packet_to_send[four_members+1] = '\0';
+			
+			int i = 0;
+			
+			while (i != 1000) {
+				printf("%c", packet_to_send[i]);
+				i++;
+			}
 			
 			
+			write(sockfd, packet_to_send, 1000);
+			/*
 			// sends packet to server
-			int sent_packet = sendto(sockfd, packet_to_send, packet_string_size, 0, res->ai_addr, res->ai_addrlen);
+			int sent_packet = send(sockfd, packet_to_send, packet_string_size, 0);
 			if (sent_packet == -1) {
 				printf("Error in sending packet'\n");
 				return 0;
 			}
-			
-			
-			
-			
-		}
-		else {
-			printf("wrong\n");
+			else {
+				printf("sending is gucci");
+			}
+*/
 		}
 		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		
-		/*
-		char input[1000];
-        scanf("%s", &input);
 
-        char *ptr = strtok(input, " ");
-        char *id = malloc(20), *pw = malloc(20), *ip = malloc(20), *port = malloc(20); 
-		memset(id, 0, 20);
-		memset(pw, 0, 20);
-		memset(ip, 0, 20);
-		memset(port, 0, 20);
-
-
-
-        if (strcmp(ptr, "login") == 0) {
-            int count = 1;
-            printf("1");
-            while (ptr != NULL) {
-
-                
-				/
-                if (count == 1) {
-					ptr = strtok(NULL, " ");
-                    strcpy(id, ptr);
-                    //count++;
-                }
-                else if (count == 2) {
-					//ptr = strtok(NULL, " ");
-                    //strcpy(pw, ptr);
-                    //count++;
-                }
-                else if (count == 3) {
-					//ptr = strtok(NULL, " ");
-                    //strcpy(ip, ptr);
-                    //count++;
-                }
-                else if (count == 4) {
-					//ptr = strtok(NULL, " ");
-                    //strcpy(port, ptr);
-                    break;
-                }
-                else {
-                    printf("foh\n");
-                    break;
-                }
-            }
-        }
-
-			
-			
-			
-			
-			
-		
-	
-		
 		
 		else {
 			printf("invalid input, try again: \n");
 		}
 		
 		
-		*/
+		
 		
 		
 		
@@ -295,7 +230,7 @@ int main(int argc, char *argv[]) {
 	
 	
 	
-	
+	return 0;
 	
 	
 	
